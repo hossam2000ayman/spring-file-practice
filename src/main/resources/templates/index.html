@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Efficient File Manager</title>
+
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        .drop-zone {
+            transition: background-color .15s, border-color .15s;
+        }
+        .file-entry {
+            transition: transform .12s;
+        }
+        .file-entry:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+
+<body class="bg-slate-100 min-h-screen font-sans">
+
+<div class="max-w-6xl mx-auto py-8 px-4">
+
+    <header class="mb-6">
+        <h1 class="text-3xl font-semibold text-slate-800">Efficient File Manager</h1>
+        <p class="text-sm text-slate-500 mt-1">Upload, preview, and download files.</p>
+    </header>
+
+    <!-- MAIN GRID -->
+    <main class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        <!-- LEFT: File Browser -->
+        <section class="bg-white shadow rounded-lg p-4 col-span-1">
+            <h2 class="text-lg font-medium mb-3">Files</h2>
+
+            <ul id="fileList" class="space-y-2 text-sm">
+                <li class="text-slate-500">Loading files...</li>
+            </ul>
+        </section>
+
+        <!-- MIDDLE: Upload -->
+        <section class="bg-white shadow rounded-lg p-4 col-span-1">
+            <h2 class="text-lg font-medium mb-3">Upload File</h2>
+
+            <div id="dropZone"
+                 class="drop-zone border-2 border-dashed border-slate-300 p-6 rounded-lg text-center hover:border-indigo-400 cursor-pointer">
+                <p class="text-sm text-slate-600">Click or drop file here</p>
+                <input id="fileInput" type="file" class="hidden">
+            </div>
+
+            <div class="mt-3 text-sm" id="selectedFile">No file selected</div>
+
+            <button id="uploadBtn"
+                    class="mt-3 px-4 py-2 bg-indigo-600 text-white rounded shadow disabled:opacity-50"
+                    disabled>
+                Upload
+            </button>
+
+            <div class="mt-3 text-sm" id="uploadMessage"></div>
+        </section>
+
+        <!-- RIGHT: Preview -->
+        <section class="bg-white shadow rounded-lg p-4 col-span-1">
+            <h2 class="text-lg font-medium mb-3">Preview</h2>
+
+            <div id="previewArea"
+                 class="border rounded p-3 text-sm text-slate-500 h-96 overflow-auto bg-slate-50 flex items-center justify-center">
+                Select a file to preview
+            </div>
+        </section>
+
+    </main>
+</div>
+
+<!-- FULL SCRIPT BLOCK -->
+<script>
+    // API endpoints
+    const LIST_URL = "/api/efficient/file/list";
+    const UPLOAD_URL = "/api/efficient/file/upload";
+    const PREVIEW_URL = "/api/efficient/file/preview/";
+    const DOWNLOAD_URL = "/api/efficient/file/download/";
+
+    // Elements
+    const fileListEl = document.getElementById("fileList");
+    const previewArea = document.getElementById("previewArea");
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+    const selectedFileText = document.getElementById("selectedFile");
+    const uploadBtn = document.getElementById("uploadBtn");
+    const uploadMessage = document.getElementById("uploadMessage");
+
+    let pickedFile = null;
+
+    // ------------------------------
+    // Load Files Initially
+    // ------------------------------
+    async function loadFiles() {
+        const res = await fetch(LIST_URL);
+        const data = await res.json();
+
+        fileListEl.innerHTML = "";
+
+        if (data.length === 0) {
+            fileListEl.innerHTML = "<li class='text-slate-400'>No files available.</li>";
+            return;
+        }
+
+        data.forEach(item => {
+            const li = document.createElement("li");
+            li.className = "flex justify-between items-center p-2 border rounded file-entry cursor-pointer";
+
+            li.innerHTML = `
+          <span>${item.directory ? "📁" : "📄"} ${item.name}</span>
+          <span class="text-slate-500">${item.size ? humanFileSize(item.size) : ""}</span>
+        `;
+
+            if (!item.directory) {
+                li.addEventListener("click", () => previewFile(item.name));
+            }
+
+            fileListEl.appendChild(li);
+        });
+    }
+
+    // ------------------------------
+    // Preview Logic
+    // ------------------------------
+    function previewFile(fileName) {
+        const fileUrl = PREVIEW_URL + encodeURIComponent(fileName);
+
+        if (isImage(fileName)) {
+            previewArea.innerHTML = `<img src="${fileUrl}" class="max-w-full rounded shadow">`;
+            return;
+        }
+
+        if (isPdf(fileName)) {
+            previewArea.innerHTML = `<iframe src="${fileUrl}" class="w-full h-full rounded"></iframe>`;
+            return;
+        }
+
+        if (isText(fileName)) {
+            fetch(fileUrl)
+                .then(r => r.text())
+                .then(text => {
+                    previewArea.innerHTML = `<pre class="whitespace-pre-wrap">${text}</pre>`;
+                })
+                .catch(() => {
+                    previewArea.innerHTML = `<span class='text-red-600'>Error loading text file</span>`;
+                });
+            return;
+        }
+
+        triggerHrefDownload(DOWNLOAD_URL + encodeURIComponent(fileName));
+        previewArea.innerHTML = `<div class='text-slate-500'>Preview not supported. File downloaded.</div>`;
+    }
+
+    // ------------------------------
+    // Upload Logic
+    // ------------------------------
+    dropZone.addEventListener("click", () => fileInput.click());
+
+    dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.classList.add("bg-slate-100");
+    });
+
+    dropZone.addEventListener("dragleave", () => {
+        dropZone.classList.remove("bg-slate-100");
+    });
+
+    dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("bg-slate-100");
+
+        const file = e.dataTransfer.files[0];
+        setPickedFile(file);
+    });
+
+    fileInput.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        setPickedFile(file);
+    });
+
+    function setPickedFile(file) {
+        pickedFile = file;
+        selectedFileText.textContent = file.name + " (" + humanFileSize(file.size) + ")";
+        uploadBtn.disabled = false;
+        uploadMessage.textContent = "";
+    }
+
+    uploadBtn.addEventListener("click", async () => {
+        if (!pickedFile) return;
+
+        const form = new FormData();
+        form.append("file", pickedFile);
+
+        uploadMessage.textContent = "Uploading...";
+
+        const res = await fetch(UPLOAD_URL, {
+            method: "POST",
+            body: form
+        });
+
+        if (!res.ok) {
+            uploadMessage.innerHTML = "<span class='text-red-600'>Upload failed</span>";
+            return;
+        }
+
+        uploadMessage.innerHTML = "<span class='text-green-600'>Upload successful</span>";
+        loadFiles();
+    });
+
+    // ------------------------------
+    // Download Utility
+    // ------------------------------
+    function triggerHrefDownload(url) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }
+
+    // ------------------------------
+    // Helpers
+    // ------------------------------
+    function humanFileSize(size) {
+        const i = Math.floor(Math.log(size) / Math.log(1024));
+        const units = ["B", "KB", "MB", "GB"];
+        return (size / Math.pow(1024, i)).toFixed(2) + " " + units[i];
+    }
+
+    function isImage(name) {
+        return /\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(name);
+    }
+
+    function isPdf(name) {
+        return /\.pdf$/i.test(name);
+    }
+
+    function isText(name) {
+        return /\.(txt|json|xml|csv|log|md|yaml|yml)$/i.test(name);
+    }
+
+    // Initial load
+    loadFiles();
+</script>
+
+</body>
+</html>

@@ -20,7 +20,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/file")
-public class FilesController {
+public class FileController {
 
     @Autowired
     FileService fileService;

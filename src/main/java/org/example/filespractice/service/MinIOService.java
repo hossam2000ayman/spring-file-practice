@@ -9,7 +9,6 @@ import io.minio.messages.Item;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -229,13 +228,14 @@ public class MinIOService {
     public String generatePresignedUrl(String objectName) throws Exception {
         return generatePresignedUrl(objectName, defaultBucketName);
     }
+
     public String generatePresignedUrl(String objectName, String bucketName) throws Exception {
         return minioClient.getPresignedObjectUrl(
                 GetPresignedObjectUrlArgs.builder()
                         .method(Method.GET)
                         .bucket(bucketName)
                         .object(objectName)
-                        .expiry(1, TimeUnit.MINUTES)
+                        .expiry(10, TimeUnit.MINUTES)
                         .build()
         );
     }
@@ -243,13 +243,14 @@ public class MinIOService {
     public String generateUploadUrl(String objectName) throws Exception {
         return generateUploadUrl(objectName, defaultBucketName);
     }
+
     public String generateUploadUrl(String objectName, String bucketName) throws Exception {
         return minioClient.getPresignedObjectUrl(
                 GetPresignedObjectUrlArgs.builder()
-                        .method(Method.POST)
+                        .method(Method.PUT)
                         .bucket(bucketName)
                         .object(objectName)
-                        .expiry(1, TimeUnit.MINUTES)
+                        .expiry(10, TimeUnit.MINUTES)
                         .build()
         );
     }
